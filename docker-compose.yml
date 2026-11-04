@@ -1,4 +1,5 @@
-# itk-version: 3.2.0
+# itk-version: 3.1.0
+version: "3"
 
 networks:
   frontend:
@@ -15,24 +16,40 @@ services:
     ports:
       - '3306'
     environment:
-      - MYSQL_ROOT_PASSWORD=password
-      - MYSQL_USER=db
-      - MYSQL_PASSWORD=db
-      - MYSQL_DATABASE=db
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
+      - MYSQL_USER=${MYSQL_USER}
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD}
+      - MYSQL_DATABASE=${MYSQL_DATABASE}
       #- ENCRYPT=1 # Uncomment to enable database encryption.
+    volumes:
+      - db-data:/var/lib/mysql
+
+  db-backup:
+    image: databack/mysql-backup
+    networks:
+      - app
+    depends_on:
+      - mariadb
+    volumes:
+      - ./bibselv-backup:/db
+    environment:
+      - DB_DUMP_TARGET=/db
+      - DB_USER=${MYSQL_USER}
+      - DB_PASS=${MYSQL_PASSWORD}
+      - DB_SERVER=mariadb
+      - DB_DUMP_BEGIN=+3
+      - DB_DUMP_FREQ=1440 # 24 hours
 
   phpfpm:
     image: itkdev/php8.3-fpm:latest
     networks:
       - app
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     environment:
       - PHP_XDEBUG_MODE=${PHP_XDEBUG_MODE:-off}
       - PHP_MAX_EXECUTION_TIME=30
       - PHP_MEMORY_LIMIT=256M
-      # Depending on the setup, you may have to remove --read-envelope-from from msmtp (cf. https://marlam.de/msmtp/msmtp.html) or use SMTP to send mail
-      - PHP_SENDMAIL_PATH=/usr/bin/msmtp --host=mail --port=1025 --read-recipients --read-envelope-from
+      # Uncomment below to enable mailhog.
+      # - PHP_SENDMAIL_PATH=/usr/local/bin/mhsendmail --smtp-addr="mailhog:1025"
       - DOCKER_HOST_DOMAIN=${COMPOSE_DOMAIN}
       - COMPOSER_VERSION=2
       - PHP_IDE_CONFIG=serverName=localhost
@@ -42,39 +59,82 @@ services:
       - .:/app
 
   nginx:
-    image: nginx/nginx-unprivileged:alpine
+    image: nginxinc/nginx-unprivileged:alpine
     networks:
       - app
       - frontend
     depends_on:
       - phpfpm
+      - engine
     ports:
       - '8080'
-    volumes:
-      - ./.docker/templates:/etc/nginx/templates:ro
-      - .:/app
     environment:
       NGINX_FPM_SERVICE: ${COMPOSE_PROJECT_NAME}-phpfpm-1:9000
       NGINX_WEB_ROOT: /app/public
       NGINX_PORT: 8080
+    volumes:
+      - ./.docker/templates:/etc/nginx/templates:ro
+      - .:/app
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=frontend"
       - "traefik.http.routers.${COMPOSE_PROJECT_NAME}.rule=Host(`${COMPOSE_DOMAIN}`)"
-#      HTTPS config - uncomment to enable redirect from :80 to :443
-#      - "traefik.http.routers.${COMPOSE_PROJECT_NAME}.middlewares=redirect-to-https"
-#      - "traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https"
+  #      HTTPS config - uncomment to enable redirect from :80 to :443
+      - "traefik.http.routers.${COMPOSE_PROJECT_NAME}.middlewares=redirect-to-https"
+      - "traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https"
 
-  mail:
-    image: axllent/mailpit
+  engine:
+    image: node:22
+    networks:
+      - app
+    working_dir: /app
+    environment:
+      - NODE_ENV=development
+    volumes:
+      - ./engine:/app
+    command: npm run dev
+
+  frontend:
+    image: node:22
+    command: npm run watch
+    networks:
+      - app
+    working_dir: /app
+    environment:
+      - NODE_ENV=development
+    volumes:
+      - .:/app
+
+  redis:
+    image: 'redis:6'
+    networks:
+      - app
+    ports:
+      - '6379'
+
+  memcached:
+    image: 'memcached:latest'
+    networks:
+      - app
+    ports:
+      - '11211'
+    environment:
+      - MEMCACHED_CACHE_SIZE=64
+
+  cypress:
+    image: cypress/included:12.7.0
     networks:
       - app
       - frontend
-    ports:
-      - "1025"
-      - "8025"
+    environment:
+      - CYPRESS_VIDEO=false
+    volumes:
+      - .:/e2e
+      - /tmp/.X11-unix:/tmp/.X11-unix
+    working_dir: /e2e
+    entrypoint: cypress
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=frontend"
-      - "traefik.http.routers.${COMPOSE_PROJECT_NAME}mail.rule=Host(`mail-${COMPOSE_DOMAIN}`)"
-      - "traefik.http.services.${COMPOSE_PROJECT_NAME}mail.loadbalancer.server.port=8025"
+volumes:
+  db-data:
