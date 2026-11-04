@@ -41,3 +41,4 @@ temp/
 ###> phpstan/phpstan ###
 phpstan.neon
 ###< phpstan/phpstan ###
+bibselv-backup/
