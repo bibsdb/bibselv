@@ -6,7 +6,7 @@
 const debug = require('debug')('bibbox:STATE_MACHINE:actions');
 const uniqid = require('uniqid');
 const BARCODE_CODE_2OF5 = 'BD10';
-const PREFIX_2OF5 = 'LL-';
+const PREFIX_2OF5 = '';
 
 /**
  * ActionHandler.
