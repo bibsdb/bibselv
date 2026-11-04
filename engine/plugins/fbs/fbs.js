@@ -281,7 +281,7 @@ module.exports = function(options, imports, register) {
     options.config.endpoint = options.config.endpoint ?? options.fbsEndPoint;
 
     // To make this testable and not hang.
-    const enableOnlineChecks = options.enableOnlineChecks ?? true;
+    const enableOnlineChecks = options.config.enableOnlineChecks ?? true;
 
     // Defines the configuration for the online checker below.
     const onlineState = {
